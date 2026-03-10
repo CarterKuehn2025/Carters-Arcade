@@ -7,6 +7,8 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
+import { PointerLockControls } from "@react-three/drei";
+import type { PointerLockControls as PointerLockControlsImpl } from "three-stdlib";
 import { useEffect, useRef, useState } from "react";
 import ArcadeRoom from "./ArcadeRoom";
 
@@ -89,21 +91,81 @@ function TerminalOverlay({
 // now export the function definition
 export default function ArcadeExperience() {
     const [terminalOpen, setTerminalOpen] = useState(false);
+    const [canInteract, setCanInteract] = useState(false);
+
+    const controlsRef = useRef<PointerLockControlsImpl | null>(null);
+    const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null);
+    const [pointerLocked, setPointerLocked] = useState(false);
+
+    // need to track pointer-lock state
+    useEffect(() => {
+        if (!canvasEl) return;
+
+        const handleChange = () => {
+            setPointerLocked(document.pointerLockElement === canvasEl);
+        };
+
+        document.addEventListener("pointerlockchange", handleChange);
+        handleChange();
+        return () => document.removeEventListener("pointerlockchange", handleChange);
+    }, [canvasEl]);
+
+    // terminal opens, free the mouse immediately
+    useEffect(() => {
+        if (terminalOpen) {
+            controlsRef.current?.unlock();
+        }
+    }, [terminalOpen]);
+
+    const requestRelock = () => {
+        // user must invoke to get mouse back into website window
+        controlsRef.current?.lock();
+    };
 
     return (
         <div className="relative h-screen w-screen overflow-hidden bg-black">
-            <Canvas camera={{ position: [0, 1.6, 3], fov: 75 }}>
-                <ArcadeRoom
-                    controlsEnabled={!terminalOpen}
-                    onInteract={() => setTerminalOpen(true)}
+            <Canvas
+                camera={{ position: [0, 1.6, 3], fov: 75}}
+                onCreated={({ gl }) => setCanvasEl(gl.domElement)}
+                >
+                   <ArcadeRoom
+                        controlsEnabled={!terminalOpen}
+                        onInteract={() => setTerminalOpen(true)}
+                        onProximityChange={setCanInteract}
+                    />
+                    <PointerLockControls ref={controlsRef} enabled={!terminalOpen} />
+                </Canvas>
+
+                {/* HUD: info */}
+                <div className="absolute left-4 top-4 text-white/90 text-sm font-medium pointer-events-none">
+                    WASD move - Mouse look - E interact - ESC closes terminal
+                </div>
+
+                {/* HUD: interact prompt */}
+                {!terminalOpen && pointerLocked && canInteract && (
+                    <div className="absolute bottom-10 w-full flex justify-center pointer-events-none">
+                        <div className="px-3 py-1 rounded-full bg-black/70 text-white text-sm border border-white/15">
+                            Press <span className="font-bold">E</span> to interact
+                        </div>
+                    </div>
+                )}
+
+                {/* HUD: click to look */}
+                {!terminalOpen && !pointerLocked && (
+                    <div
+                        className="absolute inset-0 flex items-end justify-center pb-10 cursor-pointer"
+                        onClick={requestRelock}
+                    >
+                        <div className="px-3 py-1 rounded-full bg-black/70 text-white text-sm border border-white/15">
+                            Click to look
+                        </div>
+                    </div>
+                )}
+
+                <TerminalOverlay
+                    open={terminalOpen}
+                    onClose={() => setTerminalOpen(false)}
                 />
-            </Canvas>
-
-            <div className="absolute left-4 top-4 text-white/90 text-sm font-medium">
-                WASD move - E interact - ESC closes terminal
             </div>
-
-            <TerminalOverlay open={terminalOpen} onClose={() => setTerminalOpen(false)} />
-        </div>
     );
 }
