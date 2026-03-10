@@ -6,23 +6,20 @@
 
 "use client";
 
-import { Html } from "@react-three/drei";
+import { Html, PointerLockControls } from "@react-three/drei";
 import { useFrame} from "@react-three/fiber";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
-function Player({
-    enabled,
-    playerRef,
-}: {
-    enabled: boolean;
-    playerRef: React.RefObject<THREE.Group>;
-}) {
-    const keys = useRef({ w: false, a: false, s: false, d: false});
+// cam.quaternion represents camera rotation
+// forward and right direction vectors are created based on camera rotation
+// wasd adds and subs the movement vectors
+// ALMOST FORGOT to zero out y, started floating lol
+function FirstPersonController({ enabled }: { enabled: boolean }) {
+    const keys = React.useRef({ w: false, a: false, s: false, d: false});
 
-    // key inputs from user, eventually used to calculate movement
-    useEffect(() => {
-        // must handle inputs manually, aka press and release of any key (true/false flips)
+    // key listeners
+    React.useEffect(() => {
         const down = (e: KeyboardEvent) => {
             if (e.key === "w") keys.current.w = true;
             if (e.key === "a") keys.current.a = true;
@@ -35,54 +32,51 @@ function Player({
             if (e.key === "s") keys.current.s = false;
             if (e.key === "d") keys.current.d = false;
         };
-        // add listeners for keys
         window.addEventListener("keydown", down);
         window.addEventListener("keyup", up);
-        return () => {
+        return() => {
             window.removeEventListener("keydown", down);
             window.removeEventListener("keyup", up);
         };
     }, []);
 
-    // creating game loop, aka frame generation
     useFrame((state, delta) => {
         if (!enabled) return;
-        const g = playerRef.current;
-        if (!g) return;
 
-        const speed = 3;        // just using this for now
-        const move = new THREE.Vector3(0, 0, 0);        // base movement vector
+        const cam = state.camera;
+        const speed = 3.0;
 
-        if (keys.current.w) move.z -= 1;
-        if (keys.current.s) move.z += 1;
-        if (keys.current.a) move.x -= 1;
-        if (keys.current.d) move.x += 1;
+        // movement vectors based on where the camera is looking
+        // only need forward and right (I think)
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+        forward.y = 0;
+        forward.normalize();
+
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+        right.y = 0;
+        right.normalize();
+
+        const move = new THREE.Vector3();
+
+        if (keys.current.w) move.add(forward);
+        if (keys.current.s) move.sub(forward);
+        if (keys.current.d) move.add(right);
+        if (keys.current.a) move.sub(right);
 
         if (move.lengthSq() > 0) {
-            move.normalize().multiplyScalar(speed * delta);     // without this line, movement speed would vary across FPS
-            g.position.add(move);
+            move.normalize().multiplyScalar(speed * delta);
+            cam.position.add(move);
 
-            // now to add basic bounds for the user
-            g.position.x = THREE.MathUtils.clamp(g.position.x, -4.2, 4.2);
-            g.position.z = THREE.MathUtils.clamp(g.position.z, -4.2, 4.2);
+            // set room bounds
+            cam.position.x = THREE.MathUtils.clamp(cam.position.x, -4.2, 4.2);
+            cam.position.z = THREE.MathUtils.clamp(cam.position.z, -4.2, 4.2);
         }
-
-        // camera must follow the generated movement vector
-        const camOffset = new THREE.Vector3(0, 3.5, 7);
-        state.camera.position.lerp(g.position.clone().add(camOffset), 0.12);
-        state.camera.lookAt(g.position.x, g.position.y + 1.0, g.position.z);
     });
 
-    return (
-        <group ref={playerRef} position={[0, 0, 3]}>
-            {/* placeholder "player" */}
-            <mesh position={[0, 0.5, 0]}>
-                <sphereGeometry args={[0.35, 16, 16]} />
-                <meshStandardMaterial />
-            </mesh>
-        </group>
-    );
+    return null;
 }
+
+    
 
 // now for a semi-reuseable arcade machine
 function ArcadeMachine({
@@ -149,14 +143,12 @@ export default function ArcadeRoom({
         return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
 
-    useFrame(() => {
+    useFrame((state) => {
         controlsEnabledRef.current = controlsEnabled;
 
-        const p = playerRef.current?.position;
-        if (!p) return;
-
+        const player = state.camera.position;
         const move = new THREE.Vector3(...machinePos);
-        const dist = p.distanceTo(move);
+        const dist = player.distanceTo(move);
 
         const near = dist < 2.0;
         canInteractRef.current = near;
@@ -194,7 +186,8 @@ export default function ArcadeRoom({
             </mesh>
 
             <ArcadeMachine position={machinePos} showPrompt={canInteract && controlsEnabled} />
-            <Player enabled={controlsEnabled} playerRef={playerRef} />
+            <PointerLockControls />
+            <FirstPersonController enabled={controlsEnabled} />
         </>
     );
 }

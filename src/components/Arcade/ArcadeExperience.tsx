@@ -92,7 +92,7 @@ export default function ArcadeExperience() {
 
     return (
         <div className="relative h-screen w-screen overflow-hidden bg-black">
-            <Canvas camera={{ position: [0, 4, 8], fov: 55 }}>
+            <Canvas camera={{ position: [0, 1.6, 3], fov: 75 }}>
                 <ArcadeRoom
                     controlsEnabled={!terminalOpen}
                     onInteract={() => setTerminalOpen(true)}
