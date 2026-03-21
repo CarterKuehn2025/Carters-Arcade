@@ -102,7 +102,7 @@ export default function ArcadeRoom({
   onProximityChange,
 }: {
   controlsEnabled: boolean;
-  onInteract: () => void;
+  onInteract: (projectId: string) => void;
   onProximityChange: (near: boolean) => void;
 }) {
   const machinePos = useMemo<[number, number, number]>(() => [0, 0, -2], []);
@@ -121,7 +121,7 @@ export default function ArcadeRoom({
       if (e.key.toLowerCase() !== "e") return;
       if (!controlsEnabledRef.current) return;
       if (!canInteractRef.current) return;
-      onInteractRef.current();
+      onInteractRef.current("cpp-reverse");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

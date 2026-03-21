@@ -1,294 +1,309 @@
-// basics:
-//  - useState tracks if the terminal is open/closed
-//  - 3D scene calls onInteract() when user presses E near the cabinet
-//  - Terminal is normal HTML overlay (simplifies this process significantly)
-
-
 "use client";
 
+import type React from "react";
 import { Canvas } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
-import type { PointerLockControls as PointerLockControlsImpl } from "three-stdlib";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ArcadeRoom from "./ArcadeRoom";
+import { makeCppReverseRunner, type ProjectRunner } from "@/projects/runners/cppReverseRunner";
 
-function HudPill({
-    show,
-    children,
-    clickable = false,
-    onClick,
-}: {
-    show: boolean;
-    children: React.ReactNode;
-    clickable?: boolean;
-    onCLick?: () => void;
-}) {
-    return (
-        <div
-            className={[
-                "px-3 py-1 rounded-full bg-black/70 text-white text-sm border border-white/15",
-                "transition-opacity duration-200",
-                show ? "opacity-100" : "opacity-0",
-                clickable && show ? "cursor-pointer pointer-events-auto" : "pointer-events-none",
-            ].join(" ")}
-            onClick={clickable && show ? onClick : undefined}
-        >
-            {children}
-        </div>
-    );
+function HudPill({ show, children }: { show: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={[
+        "px-3 py-1 rounded-full bg-black/70 text-white text-sm border border-white/15",
+        "transition-opacity duration-200",
+        show ? "opacity-100" : "opacity-0",
+        "pointer-events-none",
+      ].join(" ")}
+    >
+      {children}
+    </div>
+  );
 }
 
 function TerminalOverlay({
-    open,
-    onClose,
-    onLine,
-    loading,
+  open,
+  title,
+  loading,
+  lines,
+  onClose,
+  onSubmitLine,
 }: {
-    open: boolean;
-    onClose: () => void;
-    onLine: (line: string) => Promise<void>;
-    loading: boolean;
+  open: boolean;
+  title: string;
+  loading: boolean;
+  lines: string[];
+  onClose: () => void;
+  onSubmitLine: (line: string) => Promise<void>;
 }) {
-    const [lines, setLines] = useState<string[]>([
-        "Welcome to the demo terminal.",
-        "Type something and press Enter.",
-    ]);
-    const [value, setValue] = useState("");
-    const inputRef = useRef<HTMLInputElement | null>(null);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-    // when terminal opens, we need to focus the input (redirect input stream)
-    useEffect(() => {
-        if (open) inputRef.current?.focus();
-    }, [open]);
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
 
-    // enable ESC to close terminal window
-    useEffect(() => {
-        if (!open) return;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [open, onClose]);
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
-    // need to reset the lines when opened
-    useEffect(() => {
-        if (!open) return;
-        setLines([
-            "Booting project...",
-            "Type 'help' fro commands.",
-        ]);
-        setValue("");
-    }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [open, lines]);
 
-    // just in case
-    if (!open) return null;
+  useEffect(() => {
+    if (open) setValue("");
+  }, [open]);
 
-    // now for formatting the window
-    return (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4">
-            <div className="w-full max-w-3xl rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                    <div className="text-zinc-200 font-medium">Project Terminal</div>
-                    <button
-                        className="text-zinc-300 hover:text-white text-sm" onClick={onClose}>
-                        ESC / Close
-                    </button>
-                </div>
+  if (!open) return null;
 
-                <div className="p-4 font-mono text-sm text-zinc-100 space-y-1 h-[50vh] overflow-auto">
-                    {loading && <div className="text-white/70"> Loading runtime...</div>}
-                    {lines.map((l, i) => (
-                        <div key={i}>{l}</div>
-                    ))}
-                </div>
-
-                <div className="px-4 pb-4">
-                    <input
-                        ref={inputRef}
-                        className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 font-mono text-zinc-100 outline-none"
-                        value={value}
-                        disabled={loading}
-                        onChange={(e) => setValue(e.target.value)}
-                        onKeyDown={async (e) => {
-                            if (e.key !== "Enter") return;
-                            const trimmed = value.trim();
-                            if (!trimmed) return;
-
-                            // now we'll show prompt line
-                            setLines((prev) => [...prev, `> ${trimmed}`]);
-                            setValue("");
-
-                            // delegate to our program "runner" aka come back later and wire to C++
-                            await onLine(trimmed);
-
-                            // runner will append output by calling the window event
-                        }}
-                        placeholder={loading ? "Loading..." : "Type command..."}
-                    />
-                </div>
-            </div>
+  return (
+    <div
+      className="absolute inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+      onMouseDown={(e) => e.stopPropagation()} // prevent relock click from firing under the overlay
+    >
+      <div className="w-full max-w-3xl rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <div className="text-zinc-200 font-medium">{title}</div>
+          <button className="text-zinc-300 hover:text-white text-sm" onClick={onClose}>
+            ESC / Close
+          </button>
         </div>
-    );
+
+        <div ref={scrollRef} className="p-4 font-mono text-sm text-zinc-100 space-y-1 h-[50vh] overflow-auto">
+          {loading && <div className="text-white/70">Loading runtime...</div>}
+          {lines.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </div>
+
+        <div className="px-4 pb-4">
+          <input
+            ref={inputRef}
+            className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 font-mono text-zinc-100 outline-none disabled:opacity-60"
+            value={value}
+            disabled={loading}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={async (e) => {
+              if (e.key !== "Enter") return;
+              const trimmed = value.trim();
+              if (!trimmed) return;
+              setValue("");
+              await onSubmitLine(trimmed);
+            }}
+            placeholder={loading ? "Loading..." : "Type command..."}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-// now export the function definition
 export default function ArcadeExperience() {
-    const [terminalOpen, setTerminalOpen] = useState(false);
-    const [canInteract, setCanInteract] = useState(false);
+  // Single source of truth:
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const terminalOpen = activeProjectId !== null;
 
-    const controlsRef = useRef<PointerLockControlsImpl | null>(null);
-    const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null);
-    const [pointerLocked, setPointerLocked] = useState(false);
+  const [terminalLoading, setTerminalLoading] = useState(false);
+  const [terminalLines, setTerminalLines] = useState<string[]>([]);
 
-    // for diff HUD visibility states (aka auto hide)
-    const [showInteractHint, setShowInteractHint] = useState(false);
-    const [showResumeHint, setShowResumeHint] = useState(false);
-    const resumeArmedRef = useRef(false);
+  const [canInteract, setCanInteract] = useState(false);
 
-    // append terminal output using local state setter
-    const [terminalLoading, setTerminalLoading] = useState(false);
-    const terminalAppendRef = useRef<(lines: string[]) => void>(() => {});
+  const controlsRef = useRef<React.ComponentRef<typeof PointerLockControls> | null>(null);
+  const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null);
+  const [pointerLocked, setPointerLocked] = useState(false);
 
-    // need to track pointer-lock state
-    useEffect(() => {
-        if (!canvasEl) return;
+  // auto-hide HUD hints
+  const [showInteractHint, setShowInteractHint] = useState(false);
+  const [showResumeHint, setShowResumeHint] = useState(false);
+  const resumeArmedRef = useRef(false);
 
-        const handleChange = () => {
-            setPointerLocked(document.pointerLockElement === canvasEl);
-        };
+  // Runner registry (ready for multiple machines later)
+  const runnersRef = useRef<Record<string, ProjectRunner>>({});
+  const runnerInitPromisesRef = useRef<Record<string, Promise<void>>>({});
 
-        document.addEventListener("pointerlockchange", handleChange);
-        handleChange();
-        return () => document.removeEventListener("pointerlockchange", handleChange);
-    }, [canvasEl]);
+  const appendLines = (newLines: string[]) => {
+    setTerminalLines((prev) => [...prev, ...newLines]);
+  };
 
-    // terminal opens, free the mouse immediately
-    useEffect(() => {
-        if (terminalOpen) {
-            controlsRef.current?.unlock();
-        }
-        else {
-            // terminal just closed, ready the resume hint but don't want to show until user moves/presses a key
-            resumeArmedRef.current = true;
-            setShowResumeHint(false);
-        }
-    }, [terminalOpen]);
+  const ensureRunnerReady = async (projectId: string) => {
+    if (runnersRef.current[projectId]) return;
 
-    // when pointer lock is regain, hide resume hint immediately
-    useEffect(() => {
-        if (pointerLocked) {
-            resumeArmedRef.current = false;
-            setShowResumeHint(false);
-        }
-    }, [pointerLocked]);
+    if (!runnerInitPromisesRef.current[projectId]) {
+      if (projectId === "cpp-reverse") {
+        runnersRef.current[projectId] = makeCppReverseRunner();
+      } else {
+        throw new Error(`Unknown projectId: ${projectId}`);
+      }
 
-    // show "Press E" breifly when user walks into interact range (+ auto hide)
-    useEffect(() => {
-        if (terminalOpen) {
-            setShowInteractHint(false);
-            return;
-        }
-        if (!pointerLocked) {
-            setShowInteractHint(false);
-            return;
-        }
-        if (!canInteract) {
-            setShowInteractHint(false);
-            return;
-        }
+      runnerInitPromisesRef.current[projectId] = runnersRef.current[projectId].init();
+    }
 
-        setShowInteractHint(true);
-        const t = window.setTimeout(() => setShowInteractHint(false), 1600);
-        return () => window.clearTimeout(t);
-    }, [terminalOpen, pointerLocked, canInteract]);
+    await runnerInitPromisesRef.current[projectId];
+  };
 
-    // now to only show "Click to look" after the user attempts input while pointer is unlocked
-    useEffect(() => {
-        if (terminalOpen) return;
+  // Track pointer-lock state
+  useEffect(() => {
+    if (!canvasEl) return;
 
-        const maybeShow = (e: Event) => {
-            if (terminalOpen) return;
-            if (pointerLocked) return;
-            if (!resumeArmedRef.current) return;
+    const handleChange = () => setPointerLocked(document.pointerLockElement === canvasEl);
 
-            // want to display hint for a moment, then hide (keep "armed" so it can reappear)
-            setShowResumeHint(true);
-            const t = window.setTimeout(() => setShowResumeHint(false), 1800);
+    document.addEventListener("pointerlockchange", handleChange);
+    handleChange();
+    return () => document.removeEventListener("pointerlockchange", handleChange);
+  }, [canvasEl]);
 
-            // after displays one, remain armed, any future attempt can still display it again
-            // cleanup timer for next showing
-            return () => window.clearTimeout(t);
-        };
+  // Terminal open => unlock mouse immediately
+  useEffect(() => {
+    if (terminalOpen) {
+      controlsRef.current?.unlock();
+    } else {
+      resumeArmedRef.current = true;
+      setShowResumeHint(false);
+    }
+  }, [terminalOpen]);
 
-        const onKeyDown = (e: KeyboardEvent) => {
-            const k = e.key.toLowerCase();
-            if (k === "w" || k === "a" || k === "s" || k === "d") maybeShow(e);
-        };
-        const onMouseMove = (e: MouseEvent) => maybeShow(e);
+  // If pointer lock regained => hide resume hint
+  useEffect(() => {
+    if (pointerLocked) {
+      resumeArmedRef.current = false;
+      setShowResumeHint(false);
+    }
+  }, [pointerLocked]);
 
-        window.addEventListener("keydown", onKeyDown);
-        window.addEventListener("mousemove", onMouseMove);
-        return () => {
-            window.removeEventListener("keydown", onKeyDown);
-            window.removeEventListener("mousemove", onMouseMove);
-        };
-    }, [terminalOpen, pointerLocked]);
+  // Show "Press E" briefly on entering range
+  useEffect(() => {
+    if (terminalOpen || !pointerLocked || !canInteract) {
+      setShowInteractHint(false);
+      return;
+    }
+    setShowInteractHint(true);
+    const t = window.setTimeout(() => setShowInteractHint(false), 1600);
+    return () => window.clearTimeout(t);
+  }, [terminalOpen, pointerLocked, canInteract]);
 
-    // clicking anywhere when terminal is closed tries to re-lock
-    const onBackgroundMouseDown = () => {
-        if (terminalOpen) return;
-        if (pointerLocked) return;
-        controlsRef.current?.lock();
+  // Show "Click to look" only after attempted input while unlocked
+  useEffect(() => {
+    if (terminalOpen) return;
+
+    const maybeShow = () => {
+      if (pointerLocked) return;
+      if (!resumeArmedRef.current) return;
+      setShowResumeHint(true);
+      window.setTimeout(() => setShowResumeHint(false), 1800);
     };
 
-    // temp runner for now, replacing with C++ WASM runner
-    const onTerminalLine = async (line: string) => {
-        // just echo
-        terminalAppendRef.current([`echo: ${line}`]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === "w" || k === "a" || k === "s" || k === "d") maybeShow();
     };
+    const onMouseMove = () => maybeShow();
 
-    return (
-        <div className="relative h-screen w-screen overflow-hidden bg-black"
-            onMouseDown={onBackgroundMouseDown}
-        >
-            <Canvas
-                camera={{ position: [0, 1.6, 3], fov: 75}}
-                onCreated={({ gl }) => setCanvasEl(gl.domElement)}
-            >
-                <ArcadeRoom
-                    controlsEnabled={!terminalOpen}
-                    onInteract={() => setTerminalOpen(true)}
-                    onProximityChange={setCanInteract}
-                />
-                <PointerLockControls ref={controlsRef} enabled={!terminalOpen} />
-            </Canvas>
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousemove", onMouseMove);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousemove", onMouseMove);
+    };
+  }, [terminalOpen, pointerLocked]);
 
-            {/* top left HUD */}
-            <div className="absolute left-4 top-4 text-white/90 text-sm font-medium pointer-events-none">
-                WASD move - Mouse Look - E Interact - ESC closes terminal
-            </div>
+  // Clicking anywhere (when terminal is closed) tries to re-lock
+  const onBackgroundMouseDown = () => {
+    if (terminalOpen) return;
+    if (pointerLocked) return;
+    controlsRef.current?.lock();
+  };
 
-            {/* bottom center HUD */}
-            <div className="absolute bottom-10 w-full flex justify-center">
-                <HudPill show={!terminalOpen && pointerLocked && canInteract && showInteractHint}>
-                    Press <span className="font-bold">E</span> to interact
-                </HudPill>
-            </div>
+  // Boot runner when a project becomes active
+  useEffect(() => {
+    if (!activeProjectId) return;
 
-            {/* resume hint (only after attempted input) */}
-            <div className="absolute bottom-20 w-full flex justify-center">
-                <HudPill show={!terminalOpen && !pointerLocked && showResumeHint}>
-                    Click to look
-                </HudPill>
-            </div>
+    let cancelled = false;
 
-            <TerminalOverlay
-                open={terminalOpen}
-                loading={terminalLoading}
-                onClose={() => setTerminalOpen(false)}
-                onLine={onTerminalLine}
-            />
-        </div>
-    );
+    (async () => {
+      setTerminalLoading(true);
+      setTerminalLines([`Booting ${activeProjectId}...`, "Type `help` for commands."]);
+
+      try {
+        await ensureRunnerReady(activeProjectId);
+        if (!cancelled) appendLines(["(ready)"]);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!cancelled) appendLines([`(error) ${msg}`]);
+      } finally {
+        if (!cancelled) setTerminalLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
+
+  const onTerminalLine = async (line: string) => {
+    appendLines([`> ${line}`]);
+
+    const projectId = activeProjectId;
+    if (!projectId) return;
+
+    const runner = runnersRef.current[projectId];
+    if (!runner) {
+      appendLines(["(runner not loaded)"]);
+      return;
+    }
+
+    const outs = await runner.runLine(line);
+    if (outs.length) appendLines(outs);
+  };
+
+  const terminalTitle = useMemo(
+    () => `Project Terminal - ${activeProjectId ?? ""}`,
+    [activeProjectId]
+  );
+
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-black" onMouseDown={onBackgroundMouseDown}>
+      <Canvas camera={{ position: [0, 1.6, 3], fov: 75 }} onCreated={({ gl }) => setCanvasEl(gl.domElement)}>
+        <ArcadeRoom
+          controlsEnabled={!terminalOpen}
+          onInteract={(projectId) => setActiveProjectId(projectId)}
+          onProximityChange={setCanInteract}
+        />
+        <PointerLockControls ref={controlsRef} enabled={!terminalOpen} />
+      </Canvas>
+
+      <div className="absolute left-4 top-4 text-white/90 text-sm font-medium pointer-events-none">
+        WASD move - Mouse look - E interact - ESC closes terminal
+      </div>
+
+      <div className="absolute bottom-10 w-full flex justify-center">
+        <HudPill show={!terminalOpen && pointerLocked && canInteract && showInteractHint}>
+          Press <span className="font-bold">E</span> to interact
+        </HudPill>
+      </div>
+
+      <div className="absolute bottom-20 w-full flex justify-center">
+        <HudPill show={!terminalOpen && !pointerLocked && showResumeHint}>Click to look</HudPill>
+      </div>
+
+      <TerminalOverlay
+        open={terminalOpen}
+        title={terminalTitle}
+        loading={terminalLoading}
+        lines={terminalLines}
+        onClose={() => setActiveProjectId(null)}
+        onSubmitLine={onTerminalLine}
+      />
+    </div>
+  );
 }
