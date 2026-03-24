@@ -72,7 +72,7 @@ function FirstPersonController({ enabled }: { enabled: boolean }) {
         // set room bounds
         cam.position.y = 1.6;
         cam.position.x = THREE.MathUtils.clamp(cam.position.x, -4.2, 4.2);
-        cam.position.z = THREE.MathUtils.clamp(cam.position.z, -4.2, 4.2);
+        cam.position.z = THREE.MathUtils.clamp(cam.position.z, -16.2, 16.2);
     });
 
     return null;
@@ -187,24 +187,24 @@ export default function ArcadeRoom({
       <directionalLight position={[5, 8, 5]} intensity={1.1} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[12, 12]} />
+        <planeGeometry args={[12, 36]} />
         <meshStandardMaterial />
       </mesh>
 
-      <mesh position={[0, 1.5, -5.5]}>
+      <mesh position={[0, 1.5, -17.5]}>
         <boxGeometry args={[12, 3, 1]} />
         <meshStandardMaterial />
       </mesh>
-      <mesh position={[0, 1.5, 5.5]}>
+      <mesh position={[0, 1.5, 17.5]}>
         <boxGeometry args={[12, 3, 1]} />
         <meshStandardMaterial />
       </mesh>
       <mesh position={[-5.5, 1.5, 0]}>
-        <boxGeometry args={[1, 3, 12]} />
+        <boxGeometry args={[1, 3, 36]} />
         <meshStandardMaterial />
       </mesh>
       <mesh position={[5.5, 1.5, 0]}>
-        <boxGeometry args={[1, 3, 12]} />
+        <boxGeometry args={[1, 3, 36]} />
         <meshStandardMaterial />
       </mesh>
 
