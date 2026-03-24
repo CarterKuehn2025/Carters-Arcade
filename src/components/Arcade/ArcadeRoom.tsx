@@ -9,6 +9,7 @@
 import { Html, PointerLockControls } from "@react-three/drei";
 import { useFrame} from "@react-three/fiber";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ARCADE_MACHINES } from "@/arcade/machines";
 import * as THREE from "three";
 
 // cam.quaternion represents camera rotation
@@ -80,14 +81,21 @@ function FirstPersonController({ enabled }: { enabled: boolean }) {
     
 
 // now for a semi-reuseable arcade machine
-function ArcadeMachine({ position }: { position: [number, number, number] }) {
+function ArcadeMachine({
+  position,
+  rotationY = 0,
+}: {
+  position: [number, number, number];
+  rotationY?: number;
+}) {
     return (
-        <group position={position}>
+        <group position={position} rotation={[0, rotationY, 0]}>
+          {/* cabinet body */}
             <mesh position={[0, 0.9, 0]}>
                 <boxGeometry args={[1.2, 1.8, 1.0]} />
                 <meshStandardMaterial />
             </mesh>
-
+          {/* screen */}
             <mesh position={[0, 1.25, 0.51]}>
                 <boxGeometry args={[0.9, 0.55, 0.05]} />
                 <meshStandardMaterial />
@@ -103,11 +111,13 @@ export default function ArcadeRoom({
 }: {
   controlsEnabled: boolean;
   onInteract: (projectId: string) => void;
-  onProximityChange: (near: boolean) => void;
+  onProximityChange: (nearMachineId: string | null) => void;
 }) {
   const machinePos = useMemo<[number, number, number]>(() => [0, 0, -2], []);
+  const nearMachineIdRef = useRef<string | null>(null);
+  const nearProjectIdRef = useRef<string | null>(null);
   const canInteractRef = useRef(false);
-  const lastNearRef = useRef<boolean>(false);
+  const lastNearMachineIdRef = useRef<string | null>(null);
   const controlsEnabledRef = useRef(true);
   const onInteractRef = useRef(onInteract);
 
@@ -115,34 +125,59 @@ export default function ArcadeRoom({
     onInteractRef.current = onInteract;
   }, [onInteract]);
 
-  // E to interact
+  // E to interact, grabs pid on interact (e is pressed by user)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== "e") return;
       if (!controlsEnabledRef.current) return;
-      if (!canInteractRef.current) return;
-      onInteractRef.current("cpp-reverse");
+
+      const pid = nearProjectIdRef.current;
+      if (!pid) return;
+
+      onInteractRef.current(pid);
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // updated to find the nearest interactable machine
   useFrame((state) => {
     controlsEnabledRef.current = controlsEnabled;
 
-    const p = state.camera.position; // camera is the player
-    const m = new THREE.Vector3(...machinePos);
+    const p = state.camera.position;
 
-    // distance on XZ plane (ignore height)
-    const dist = Math.hypot(p.x - m.x, p.z - m.z);
-    const near = dist < 2.0;
+    // not rly following the proximity logic, but I think it'll work
+    let bestDist = Infinity;
+    let bestMachineId: string | null = null;
+    let bestProjectId: string | null = null;
 
-    canInteractRef.current = near;
+    for (const m of ARCADE_MACHINES) {
+      const dx = p.x - m.position[0];
+      const dz = p.z - m.position[2];
+      const dist = Math.hypot(dx, dz);
 
-    // Only notify parent when it changes (avoid setting state every frame)
-    if (near !== lastNearRef.current) {
-      lastNearRef.current = near;
-      onProximityChange(near);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMachineId = m.machineId;
+        bestProjectId = m.projectId;
+      }
+    }
+
+    const interactRadius = 2.0;
+    const near = bestDist < interactRadius;
+
+    const newNearMachineId = near ? bestMachineId : null;
+    const newNearProjectId = near ? bestProjectId : null;
+
+    // update refs
+    nearMachineIdRef.current = newNearMachineId;
+    nearProjectIdRef.current = newNearProjectId;
+
+    // notify parent only when it changes
+    if (newNearMachineId !== lastNearMachineIdRef.current) {
+      lastNearMachineIdRef.current = newNearMachineId;
+      onProximityChange(newNearMachineId);
     }
   });
 
@@ -173,7 +208,13 @@ export default function ArcadeRoom({
         <meshStandardMaterial />
       </mesh>
 
-      <ArcadeMachine position={machinePos} />
+      {ARCADE_MACHINES.map((m) => (
+        <ArcadeMachine
+          key={m.machineId}
+          position={m.position}
+          rotationY={m.rotationY ?? 0}
+          />
+      ))}
       <FirstPersonController enabled={controlsEnabled} />
     </>
   );
