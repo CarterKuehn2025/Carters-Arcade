@@ -8,6 +8,8 @@ import { ARCADE_MACHINES } from "@/arcade/machines";
 import ArcadeRoom from "./ArcadeRoom";
 import { makeCppReverseRunner, type ProjectRunner } from "@/projects/runners/cppReverseRunner";
 
+const MACHINE_LABEL_BY_ID = new Map(ARCADE_MACHINES.map((m) => [m.machineId, m.label]));
+
 function HudPill({ show, children }: { show: boolean; children: React.ReactNode }) {
   return (
     <div
@@ -121,23 +123,26 @@ export default function ArcadeExperience() {
   const [nearMachineId, setNearMachineId] = useState<string | null>(null);
 
   const controlsRef = useRef<React.ComponentRef<typeof PointerLockControls> | null>(null);
-  const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null);
   const [pointerLocked, setPointerLocked] = useState(false);
 
   // auto-hide HUD hints
   const [showInteractHint, setShowInteractHint] = useState(false);
   const [showResumeHint, setShowResumeHint] = useState(false);
   const resumeArmedRef = useRef(false);
+  const resumeHintTimeoutRef = useRef<number | null>(null);
 
   // Runner registry (ready for multiple machines later)
   const runnersRef = useRef<Record<string, ProjectRunner>>({});
   const runnerInitPromisesRef = useRef<Record<string, Promise<void>>>({});
 
-  // NOT SURE IF THIS IS IN THE RIGHT PLACE
+  // determine true/false for interact
   const canInteract = nearMachineId !== null;
 
-  // LIKEWISE
-  const nearLabel = ARCADE_MACHINES.find((m) => m.machineId === nearMachineId)?.label ?? "Machine";
+  // wasn't O(1), changing lookup for efficiency
+  const nearLabel = useMemo(() => {
+    if (!nearMachineId) return "Machine";
+    return MACHINE_LABEL_BY_ID.get(nearMachineId) ?? "Machine";
+  }, [nearMachineId]);
 
   const appendLines = (newLines: string[]) => {
     setTerminalLines((prev) => [...prev, ...newLines]);
@@ -161,14 +166,15 @@ export default function ArcadeExperience() {
 
   // Track pointer-lock state
   useEffect(() => {
-    if (!canvasEl) return;
-
-    const handleChange = () => setPointerLocked(document.pointerLockElement === canvasEl);
+    const handleChange = () => {
+      setPointerLocked(document.pointerLockElement !== null);
+    };
 
     document.addEventListener("pointerlockchange", handleChange);
     handleChange();
+
     return () => document.removeEventListener("pointerlockchange", handleChange);
-  }, [canvasEl]);
+  }, []);
 
   // Terminal open => unlock mouse immediately
   useEffect(() => {
@@ -185,19 +191,24 @@ export default function ArcadeExperience() {
     if (pointerLocked) {
       resumeArmedRef.current = false;
       setShowResumeHint(false);
+
+      if (resumeHintTimeoutRef.current) {
+        window.clearTimeout(resumeHintTimeoutRef.current);
+        resumeHintTimeoutRef.current = null;
+      }
     }
   }, [pointerLocked]);
 
   // Show "Press E" briefly on entering range
   useEffect(() => {
-    if (terminalOpen || !pointerLocked || !canInteract) {
+    if (terminalOpen || !pointerLocked || !nearMachineId) {
       setShowInteractHint(false);
       return;
     }
     setShowInteractHint(true);
     const t = window.setTimeout(() => setShowInteractHint(false), 1600);
     return () => window.clearTimeout(t);
-  }, [terminalOpen, pointerLocked, canInteract]);
+  }, [terminalOpen, pointerLocked, nearMachineId]);
 
   // Show "Click to look" only after attempted input while unlocked
   useEffect(() => {
@@ -206,8 +217,17 @@ export default function ArcadeExperience() {
     const maybeShow = () => {
       if (pointerLocked) return;
       if (!resumeArmedRef.current) return;
+
       setShowResumeHint(true);
-      window.setTimeout(() => setShowResumeHint(false), 1800);
+
+      if (resumeHintTimeoutRef.current) {
+        window.clearTimeout(resumeHintTimeoutRef.current);
+      }
+
+      resumeHintTimeoutRef.current = window.setTimeout(() => {
+        setShowResumeHint(false);
+        resumeHintTimeoutRef.current = null;
+      }, 1800);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -280,7 +300,7 @@ export default function ArcadeExperience() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black" onMouseDown={onBackgroundMouseDown}>
-      <Canvas camera={{ position: [0, 1.6, 3], fov: 75 }} onCreated={({ gl }) => setCanvasEl(gl.domElement)}>
+      <Canvas camera={{ position: [0, 1.6, 3], fov: 75 }} >
         <ArcadeRoom
           controlsEnabled={!terminalOpen}
           onInteract={(projectId) => setActiveProjectId(projectId)}

@@ -33,7 +33,7 @@ export const ARCADE_MACHINES: ArcadeMachineDef[] = [
         machineId: "cab-4",
         projectId: "cpp-reverse",
         label: "C++ Reverse Integer",
-        position: [2.2, 0, 3],
+        position: [2.2, 0, -3],
         rotationY: 0,     // should face toward hallway
     },
 ];

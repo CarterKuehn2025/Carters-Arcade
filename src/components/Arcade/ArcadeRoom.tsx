@@ -6,9 +6,8 @@
 
 "use client";
 
-import { Html, PointerLockControls } from "@react-three/drei";
 import { useFrame} from "@react-three/fiber";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { ARCADE_MACHINES } from "@/arcade/machines";
 import * as THREE from "three";
 
@@ -22,16 +21,18 @@ function FirstPersonController({ enabled }: { enabled: boolean }) {
     // key listeners
     React.useEffect(() => {
         const down = (e: KeyboardEvent) => {
-            if (e.key === "w") keys.current.w = true;
-            if (e.key === "a") keys.current.a = true;
-            if (e.key === "s") keys.current.s = true;
-            if (e.key === "d") keys.current.d = true;
+          const k = e.key.toLowerCase();
+            if (k === "w") keys.current.w = true;
+            if (k === "a") keys.current.a = true;
+            if (k === "s") keys.current.s = true;
+            if (k === "d") keys.current.d = true;
         };
         const up = (e: KeyboardEvent) => {
-            if (e.key === "w") keys.current.w = false;
-            if (e.key === "a") keys.current.a = false;
-            if (e.key === "s") keys.current.s = false;
-            if (e.key === "d") keys.current.d = false;
+          const k = e.key.toLowerCase();
+            if (k === "w") keys.current.w = false;
+            if (k === "a") keys.current.a = false;
+            if (k === "s") keys.current.s = false;
+            if (k === "d") keys.current.d = false;
         };
         window.addEventListener("keydown", down);
         window.addEventListener("keyup", up);
@@ -113,10 +114,8 @@ export default function ArcadeRoom({
   onInteract: (projectId: string) => void;
   onProximityChange: (nearMachineId: string | null) => void;
 }) {
-  const machinePos = useMemo<[number, number, number]>(() => [0, 0, -2], []);
   const nearMachineIdRef = useRef<string | null>(null);
   const nearProjectIdRef = useRef<string | null>(null);
-  const canInteractRef = useRef(false);
   const lastNearMachineIdRef = useRef<string | null>(null);
   const controlsEnabledRef = useRef(true);
   const onInteractRef = useRef(onInteract);
