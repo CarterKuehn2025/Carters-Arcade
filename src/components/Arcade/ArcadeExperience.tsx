@@ -4,6 +4,7 @@ import type React from "react";
 import { Canvas } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ARCADE_MACHINES } from "@/arcade/machines";
 import ArcadeRoom from "./ArcadeRoom";
 import { makeCppReverseRunner, type ProjectRunner } from "@/projects/runners/cppReverseRunner";
 
@@ -117,7 +118,7 @@ export default function ArcadeExperience() {
   const [terminalLoading, setTerminalLoading] = useState(false);
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
 
-  const [canInteract, setCanInteract] = useState(false);
+  const [nearMachineId, setNearMachineId] = useState<string | null>(null);
 
   const controlsRef = useRef<React.ComponentRef<typeof PointerLockControls> | null>(null);
   const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null);
@@ -131,6 +132,12 @@ export default function ArcadeExperience() {
   // Runner registry (ready for multiple machines later)
   const runnersRef = useRef<Record<string, ProjectRunner>>({});
   const runnerInitPromisesRef = useRef<Record<string, Promise<void>>>({});
+
+  // NOT SURE IF THIS IS IN THE RIGHT PLACE
+  const canInteract = nearMachineId !== null;
+
+  // LIKEWISE
+  const nearLabel = ARCADE_MACHINES.find((m) => m.machineId === nearMachineId)?.label ?? "Machine";
 
   const appendLines = (newLines: string[]) => {
     setTerminalLines((prev) => [...prev, ...newLines]);
@@ -277,7 +284,7 @@ export default function ArcadeExperience() {
         <ArcadeRoom
           controlsEnabled={!terminalOpen}
           onInteract={(projectId) => setActiveProjectId(projectId)}
-          onProximityChange={setCanInteract}
+          onProximityChange={setNearMachineId}
         />
         <PointerLockControls ref={controlsRef} enabled={!terminalOpen} />
       </Canvas>
@@ -288,7 +295,7 @@ export default function ArcadeExperience() {
 
       <div className="absolute bottom-10 w-full flex justify-center">
         <HudPill show={!terminalOpen && pointerLocked && canInteract && showInteractHint}>
-          Press <span className="font-bold">E</span> to interact
+          Press <span className="font-bold">E</span> to interact - {nearLabel}
         </HudPill>
       </div>
 
