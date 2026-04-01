@@ -17,8 +17,8 @@ export const ARCADE_MACHINES: ArcadeMachineDef[] = [
     },
     {
         machineId: "cab-2",
-        projectId: "cpp-reverse",
-        label: "C++ Reverse Integer",
+        projectId: "divideandconquer",
+        label: "Divide and Conquer",
         position: [2.2, 0, 2],
         rotationY: Math.PI,     // should face toward hallway
     },
